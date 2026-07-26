@@ -20,13 +20,14 @@ class BlenderNeRF_UI(bpy.types.Panel):
         row.prop(scene, 'train_data', toggle=True)
         row.prop(scene, 'test_data', toggle=True)
 
-        if not (scene.train_data or scene.test_data):
+        cos_data = scene.cos_val_data or scene.cos_fixed_data
+        if not (scene.train_data or scene.test_data or cos_data):
             layout.label(text='Nothing will happen!')
 
         else:
             layout.prop(scene, 'aabb')
 
-            if scene.train_data:
+            if scene.train_data or scene.test_data or cos_data:
                 layout.separator()
                 layout.prop(scene, 'render_frames')
 
@@ -46,6 +47,12 @@ class BlenderNeRF_UI(bpy.types.Panel):
             row = layout.row(align=True)
             row.prop(scene, 'nerf', toggle=True, text='NGP', invert_checkbox=True)
             row.prop(scene, 'nerf', toggle=True)
+
+            layout.separator()
+            layout.label(text='Path Format')
+
+            row = layout.row(align=True)
+            row.prop(scene, 'path_format', expand=True)
 
             layout.separator()
             layout.use_property_split = True

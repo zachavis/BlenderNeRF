@@ -7,8 +7,8 @@ bl_info = {
     'name': 'BlenderNeRF',
     'description': 'Easy NeRF synthetic dataset creation within Blender',
     'author': 'Maxime Raafat',
-    'version': (6, 0, 0),
-    'blender': (4, 0, 0),
+    'version': (6, 1, 0),
+    'blender': (4, 2, 0),
     'location': '3D View > N panel > BlenderNeRF',
     'doc_url': 'https://github.com/maximeraafat/BlenderNeRF',
     'category': 'Object',
@@ -25,11 +25,20 @@ PROPS = [
     ('train_data', bpy.props.BoolProperty(name='Train', description='Construct the training data', default=True) ),
     ('test_data', bpy.props.BoolProperty(name='Test', description='Construct the testing data', default=True) ),
     ('aabb', bpy.props.IntProperty(name='AABB', description='AABB scale as defined in Instant NGP', default=4, soft_min=1, soft_max=128) ),
-    ('render_frames', bpy.props.BoolProperty(name='Render Frames', description='Whether training frames should be rendered. If not selected, only the transforms.json files will be generated', default=True) ),
+    ('render_frames', bpy.props.BoolProperty(name='Render Frames', description='Whether enabled split frames should be rendered. If not selected, only metadata files will be generated', default=True) ),
     ('logs', bpy.props.BoolProperty(name='Save Log File', description='Whether to create a log file containing information on the BlenderNeRF run', default=False) ),
     ('splats', bpy.props.BoolProperty(name='Gaussian Points', description='Whether to export a points3d.ply file for Gaussian Splatting', default=False) ),
     ('splats_test_dummy', bpy.props.BoolProperty(name='Dummy Test Camera', description='Whether to export a dummy test transforms.json file or the full set of test camera poses', default=True) ),
     ('nerf', bpy.props.BoolProperty(name='NeRF', description='Whether to export the camera transforms.json files in the defaut NeRF file format convention', default=False) ),
+    ('path_format', bpy.props.EnumProperty(
+        name='Path Format',
+        description='Path separator convention used in transforms JSON files',
+        items=(
+            ('POSIX', 'Linux', 'Use forward slashes in dataset paths'),
+            ('WINDOWS', 'Windows', 'Use backslashes in dataset paths'),
+        ),
+        default='POSIX'
+    ) ),
     ('save_path', bpy.props.StringProperty(name='Save Path', description='Path to the output directory in which the synthetic dataset will be stored', subtype='DIR_PATH') ),
 
     # global automatic properties
@@ -55,8 +64,23 @@ PROPS = [
     ('sphere_scale', bpy.props.FloatVectorProperty(name='Scale', description='Scale of the training sphere in xyz axes', default=(1.0, 1.0, 1.0), update=helper.properties_ui_upd) ),
     ('sphere_radius', bpy.props.FloatProperty(name='Radius', description='Radius scale of the training sphere', default=4.0, soft_min=0.01, unit='LENGTH', update=helper.properties_ui_upd) ),
     ('focal', bpy.props.FloatProperty(name='Lens', description='Focal length of the training camera', default=50, soft_min=1, soft_max=5000, unit='CAMERA', update=helper.properties_ui_upd) ),
-    ('seed', bpy.props.IntProperty(name='Seed', description='Random seed for sampling views on the training sphere', default=0) ),
-    ('cos_nb_frames', bpy.props.IntProperty(name='Frames', description='Number of training frames randomly sampled from the training sphere', default=100, soft_min=1) ),
+    ('seed', bpy.props.IntProperty(name='Train Seed', description='Random seed for sampling COS training views', default=0) ),
+    ('cos_val_seed', bpy.props.IntProperty(name='Val Seed', description='Random seed for sampling COS validation views', default=100) ),
+    ('cos_test_seed', bpy.props.IntProperty(name='Test Seed', description='Random seed for sampling COS test views', default=200) ),
+    ('cos_val_data', bpy.props.BoolProperty(name='Val', description='Construct and render the COS validation split', default=True) ),
+    ('cos_fixed_data', bpy.props.BoolProperty(name='Fixed', description='Construct and render the COS fixed-camera diagnostic split', default=True) ),
+    ('cos_eval_frames', bpy.props.IntProperty(name='Val/Test Frames', description='Number of uniformly selected animation frames used by the COS validation and test splits', default=10, min=1) ),
+    ('cos_fixed_camera_mode', bpy.props.EnumProperty(
+        name='Fixed Camera',
+        description='Source pose for the COS fixed-camera diagnostic split',
+        items=(
+            ('TRAIN_VIEW', 'Train View', 'Hold one generated COS training view fixed'),
+            ('CAMERA', 'Camera', 'Snapshot a separately placed camera'),
+        ),
+        default='TRAIN_VIEW'
+    ) ),
+    ('cos_fixed_train_view', bpy.props.IntProperty(name='Train View', description='Zero-based training view index to hold fixed', default=0, min=0) ),
+    ('camera_fixed_target', bpy.props.PointerProperty(type=bpy.types.Object, name='Fixed Camera', description='Camera whose current pose and intrinsics will be held fixed', poll=helper.poll_is_camera) ),
     ('show_sphere', bpy.props.BoolProperty(name='Sphere', description='Whether to show the training sphere from which random views will be sampled', default=False, update=helper.visualize_sphere) ),
     ('show_camera', bpy.props.BoolProperty(name='Camera', description='Whether to show the training camera', default=False, update=helper.visualize_camera) ),
     ('upper_views', bpy.props.BoolProperty(name='Upper Views', description='Whether to sample views from the upper hemisphere of the training sphere only', default=False) ),

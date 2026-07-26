@@ -32,7 +32,7 @@ NeRFs and Gaussian splats can speed up this process, but require camera informat
 ## Installation
 
 1. Download this repository as a **ZIP** file
-2. Open Blender (4.0.0 or above)
+2. Open Blender (4.2.0 or above)
 3. In Blender, head to **Edit > Preferences > Add-ons**, and select **Install From Disk** under the drop icon
 4. Select the downloaded **ZIP** file
 
@@ -41,7 +41,7 @@ Although release versions of **BlenderNeRF** are available for download, they ar
 
 ## Setting
 
-**BlenderNeRF** consists of 3 methods discussed in the sub-sections below. Each method is capable of creating **training** data and **testing** data for NeRF in the form of training images and a `transforms_train.json` respectively `transforms_test.json` file with the corresponding camera information. The data is archived into a single **ZIP** file containing training and testing folders. Training data can then be used by a NeRF model to learn the 3D scene representation. Once trained, the model may be evaluated (or tested) on the testing data (camera information only) to obtain novel renders.
+**BlenderNeRF** consists of 3 methods discussed in the sub-sections below. SOF and TTC create training images and train/test camera metadata. COS creates rendered train, validation, test, and fixed-camera splits with normalized time metadata for dynamic NeRF datasets. The selected data is archived into a single **ZIP** file.
 
 ### Subset of Frames
 
@@ -61,7 +61,7 @@ Although release versions of **BlenderNeRF** are available for download, they ar
 
 ### Camera on Sphere
 
-**Camera on Sphere (COS)** renders training frames by uniformly sampling random camera views directed at the center from a user controlled sphere. Testing data is extracted from a selected camera.
+**Camera on Sphere (COS)** renders deterministic random camera views directed at the center from a user controlled sphere. Training covers the complete scene animation, validation and test use uniformly selected shared timestamps with independent camera seeds, and the fixed split renders the complete animation from one stationary camera.
 
 <p align='center'>
   <img src='https://maximeraafat.github.io/assets/posts/blendernerf/COS.gif' width='90%'/>
@@ -75,16 +75,17 @@ The add-on properties panel is available under `3D View > N panel > BlenderNeRF`
 * `Train` (activated by default) : whether to register training data (renderings + camera information)
 * `Test` (activated by default) : whether to register testing data (camera information only)
 * `AABB` (by default set to **4**) : aabb scale parameter as described in Instant NGP (more details below)
-* `Render Frames` (activated by default) : whether to render the frames
+* `Render Frames` (activated by default) : whether to render images for the enabled splits
 * `Save Log File` (deactivated by default) : whether to save a log file containing reproducibility information on the **BlenderNeRF** run
 * `File Format` (**NGP** by default) : whether to export the camera files in the Instant NGP or defaut NeRF file format convention
+* `Path Format` (**Linux** by default) : whether JSON file paths use forward slashes or Windows backslashes
 * `Gaussian Points` (deactivated by default) : whether to export a `points3d.ply` file for Gaussian Splatting
 * `Gaussian Test Camera Poses` (**Dummy** by default): whether to export a dummy test camera file or the full set of test camera poses (only with `Gaussian Points`)
 * `Save Path` (empty by default) : path to the output directory in which the dataset will be created
 
 If the `Gaussian Points` property is active, **BlenderNeRF** will create an additional `points3d.ply` file from all visible meshes (at render time) where each vertex will be used as initialization point. Vertex colors will be stored if available, and set to black otherwise.
 
-The [**Gaussian Splatting**](https://github.com/graphdeco-inria/gaussian-splatting) repository natively supports **NeRF** datasets, but requires both train and test data. The `Dummy` option for the `Gaussian Test Camera Poses` property creates an empty test camera pose file, in the case no test images are needed. The `Full` option exports the default test camera poses, but will require separately rendering a `test` folder containing all the test renders.
+The [**Gaussian Splatting**](https://github.com/graphdeco-inria/gaussian-splatting) repository natively supports **NeRF** datasets, but requires both train and test data. The `Dummy` option for the `Gaussian Test Camera Poses` property creates an empty test camera pose file when no test images are needed. COS renders the `Full` test split; SOF and TTC still require test images to be rendered separately.
 
 `AABB` is restricted to be an integer power of 2, it defines the side length of the bounding box volume in which NeRF will trace rays. The property was introduced with **NVIDIA's [Instant NGP](https://github.com/NVlabs/instant-ngp)** version of NeRF.
 
@@ -111,14 +112,18 @@ Below are described the properties specific to each method (the `Name` property 
 
 ### How to COS
 
-* `Camera` (always set to the active camera) : camera used for registering the testing data
 * `Location` (by default set to **0 m** vector) : center position of the training sphere from which camera views are sampled
 * `Rotation` (by default set to **0°** vector) : rotation of the training sphere from which camera views are sampled
 * `Scale` (by default set to **1** vector) : scale vector of the training sphere in xyz axes
 * `Radius` (by default set to **4 m**) : radius scalar of the training sphere
 * `Lens` (by default set to **50 mm**) : focal length of the training camera
-* `Seed` (by default set to **0**) : seed to initialize the random camera view sampling procedure
-* `Frames` (by default set to **100**) : number of training frames sampled and rendered from the training sphere
+* `Train Seed` (by default set to **0**) : seed used for training camera views and fixed training-view selection
+* `Val Seed` (by default set to **100**) : seed used for validation camera views
+* `Test Seed` (by default set to **200**) : seed used for test camera views
+* `Train`, `Val`, `Test` and `Fixed` : COS splits to export and render
+* `Val/Test Frames` (by default set to **10**) : number of shared, uniformly selected validation and test timestamps
+* `Fixed Camera > Train View` : zero-based generated training view whose pose is held fixed
+* `Fixed Camera > Camera` : separately placed perspective camera whose current pose and intrinsics are held fixed
 * `Sphere` (deactivated by default) : whether to show the training sphere from which random views will be sampled
 * `Camera` (deactivated by default) : whether to show the camera used for registering the training data
 * `Upper Views` (deactivated by default) : whether to sample views from the upper training hemisphere only (rotation variant)
@@ -127,7 +132,9 @@ Below are described the properties specific to each method (the `Name` property 
 
 Note that activating the `Sphere` and `Camera` properties creates a `BlenderNeRF Sphere` empty object and a `BlenderNeRF Camera` camera object respectively. Please do not create any objects with these names manually, since this might break the add-on functionalities.
 
-`Frames` amount of training frames will be captured using the `BlenderNeRF Camera` object, starting from the scene start frame. Finally, keep in mind that the training camera is locked in place and cannot manually be moved.
+Train and fixed export every frame in the inclusive scene animation range. Validation and test share an endpoint-inclusive uniform subset of that range. Each randomized split uses its displayed seed, so equal validation/test times can have independent poses. Every frame stores `time = (frame - frame_start) / (frame_end - frame_start)`.
+
+COS outputs `train`, `val`, `test`, and `fixed` image folders with corresponding `transforms_*.json` files. NeRF mode uses D-NeRF-compatible extensionless relative paths and requires PNG rendering. The fixed split stores a different time for every animation frame while repeating one camera transform.
 
 
 ## Tips for Optimal Results

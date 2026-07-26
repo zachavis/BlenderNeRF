@@ -91,7 +91,7 @@ class BlenderNeRF_Operator(bpy.types.Operator):
         initFrame = scene.frame_current
         step = scene.train_frame_steps if (mode == 'TRAIN' and method == 'SOF') else scene.frame_step
         if (mode == 'TRAIN' and method == 'COS'):
-            end = scene.frame_start + scene.cos_nb_frames - 1
+            end = scene.frame_end
         elif (mode == 'TRAIN' and method == 'TTC'):
             end = scene.frame_start + scene.ttc_nb_frames - 1
         else:
@@ -104,7 +104,7 @@ class BlenderNeRF_Operator(bpy.types.Operator):
             filedir = OUTPUT_TRAIN * (mode == 'TRAIN') + OUTPUT_TEST * (mode == 'TEST')
 
             frame_data = {
-                'file_path': os.path.join(filedir, os.path.splitext(filename)[0] if scene.splats else filename),
+                'file_path': self.format_dataset_path(scene, filedir, os.path.splitext(filename)[0] if scene.splats else filename),
                 'transform_matrix': self.listify_matrix(camera.matrix_world)
             }
 
@@ -161,6 +161,11 @@ class BlenderNeRF_Operator(bpy.types.Operator):
         with open(filepath, 'w') as file:
             json.dump(data, file, indent=indent)
 
+    def format_dataset_path(self, scene, *parts, relative_prefix=False):
+        separator = '\\' if scene.path_format == 'WINDOWS' else '/'
+        path = separator.join(str(part).strip('/\\') for part in parts)
+        return '.' + separator + path if relative_prefix else path
+
     def is_power_of_two(self, x):
         return math.log2(x).is_integer()
 
@@ -196,16 +201,29 @@ class BlenderNeRF_Operator(bpy.types.Operator):
 
         error_messages = []
 
-        if (method == 'SOF' or method == 'COS') and not camera.data.type == 'PERSP':
+        if method == 'SOF' and not camera.data.type == 'PERSP':
             error_messages.append('Only perspective cameras are supported!')
 
         if method == 'TTC' and not (train_camera.data.type == 'PERSP' and test_camera.data.type == 'PERSP'):
            error_messages.append('Only perspective cameras are supported!')
 
+        if method == 'COS' and not (scene.train_data or scene.cos_val_data or scene.test_data or scene.cos_fixed_data):
+            error_messages.append('Select at least one COS data split!')
+
+        if method == 'COS' and scene.cos_fixed_data and scene.cos_fixed_camera_mode == 'CAMERA':
+            if scene.camera_fixed_target is None:
+                error_messages.append('Select a fixed camera!')
+            elif scene.camera_fixed_target.data.type != 'PERSP':
+                error_messages.append('Only perspective cameras are supported!')
+
         if method == 'COS' and CAMERA_NAME in scene.objects.keys():
             sphere_camera = scene.objects[CAMERA_NAME]
             if not sphere_camera.data.type == 'PERSP':
                 error_messages.append('BlenderNeRF Camera must remain a perspective camera!')
+
+        if method == 'COS' and scene.nerf:
+            if scene.render.image_settings.file_format != 'PNG' or not scene.render.use_file_extension:
+                error_messages.append('D-NeRF-compatible COS exports require PNG file extensions!')
 
         if (method == 'SOF' and sof_name == '') or (method == 'TTC' and ttc_name == '') or (method == 'COS' and cos_name == ''):
             error_messages.append('Dataset name cannot be empty!')
@@ -239,6 +257,7 @@ class BlenderNeRF_Operator(bpy.types.Operator):
             'AABB': scene.aabb,
             'Render Frames': scene.render_frames,
             'File Format': 'NeRF' if scene.nerf else 'NGP',
+            'Path Format': scene.path_format,
             'Save Path': scene.save_path,
             'Method': method
         }
@@ -255,14 +274,28 @@ class BlenderNeRF_Operator(bpy.types.Operator):
             logdata['Dataset Name'] = scene.ttc_dataset_name
 
         else:
-            logdata['Camera'] = scene.camera.name
+            logdata['Camera'] = CAMERA_NAME
             logdata['Location'] = str(list(scene.sphere_location))
             logdata['Rotation'] = str(list(scene.sphere_rotation))
             logdata['Scale'] = str(list(scene.sphere_scale))
             logdata['Radius'] = scene.sphere_radius
             logdata['Lens'] = str(scene.focal) + ' mm'
-            logdata['Seed'] = scene.seed
-            logdata['Frames'] = scene.cos_nb_frames
+            logdata['Train Seed'] = scene.seed
+            logdata['Val Seed'] = scene.cos_val_seed
+            logdata['Test Seed'] = scene.cos_test_seed
+            logdata['Train Frames'] = scene.frame_end - scene.frame_start + 1
+            logdata['Val/Test Frames'] = scene.cos_eval_frames
+            logdata['Splits'] = {
+                'Train': scene.train_data,
+                'Val': scene.cos_val_data,
+                'Test': scene.test_data,
+                'Fixed': scene.cos_fixed_data
+            }
+            logdata['Fixed Camera Source'] = scene.cos_fixed_camera_mode
+            if scene.cos_fixed_camera_mode == 'TRAIN_VIEW':
+                logdata['Fixed Train View'] = scene.cos_fixed_train_view
+            elif scene.camera_fixed_target is not None:
+                logdata['Fixed Camera'] = scene.camera_fixed_target.name
             logdata['Upper Views'] = scene.upper_views
             logdata['Outwards'] = scene.outwards
             logdata['Dataset Name'] = scene.cos_dataset_name
