@@ -14,6 +14,11 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
     '''Camera on Sphere Operator'''
     bl_idname = 'object.camera_on_sphere'
     bl_label = 'Camera on Sphere COS'
+    _is_running = False
+
+    @classmethod
+    def poll(cls, context):
+        return not cls._is_running
 
     def uniformly_spaced_frames(self, frame_start, frame_end, count):
         total = frame_end - frame_start + 1
@@ -59,11 +64,12 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
         json_path = self.format_dataset_path(scene, split, json_name, relative_prefix=True)
         return stem, json_path
 
-    def export_split(self, context, scene, output_path, split, frames, camera, seed=None, fixed_matrix=None):
+    def prepare_split(self, context, scene, output_path, split, frames, camera, seed=None, fixed_matrix=None):
         split_path = os.path.join(output_path, split)
         os.makedirs(split_path, exist_ok=True)
         output_data = self.get_camera_intrinsics(scene, camera)
         frame_data = []
+        render_tasks = []
 
         if not (scene.splats and scene.splats_test_dummy and split == 'test'):
             for output_index, frame in enumerate(frames):
@@ -83,13 +89,17 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
                 })
 
                 if scene.render_frames:
-                    scene.render.filepath = os.path.join(split_path, stem)
-                    render_result = bpy.ops.render.render(write_still=True)
-                    if 'CANCELLED' in render_result:
-                        raise RuntimeError('Render cancelled')
+                    render_tasks.append({
+                        'camera': camera,
+                        'filepath': os.path.join(split_path, stem),
+                        'fixed_matrix': fixed_matrix.copy() if fixed_matrix is not None else None,
+                        'frame': frame,
+                        'seed': seed
+                    })
 
         output_data['frames'] = frame_data
         self.save_json(output_path, 'transforms_{}.json'.format(split), output_data)
+        return render_tasks
 
     def ensure_sphere_camera(self, context, scene):
         if EMPTY_NAME not in scene.objects:
@@ -141,6 +151,124 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
 
         scene.frame_set(initial_state['frame'])
 
+    def archive_output(self, output_path):
+        shutil.make_archive(output_path, 'zip', output_path)
+        shutil.rmtree(output_path)
+
+    def render_frame(self, context):
+        task = self._render_tasks[self._render_index]
+
+        if task['seed'] is None:
+            self._scene.frame_set(task['frame'])
+            task['camera'].matrix_world = task['fixed_matrix']
+            context.view_layer.update()
+        else:
+            self.evaluate_sphere_camera(
+                context,
+                self._scene,
+                task['camera'],
+                task['frame'],
+                task['seed']
+            )
+
+        self._scene.camera = task['camera']
+        self._scene.render.filepath = task['filepath']
+        return bpy.ops.render.render('EXEC_DEFAULT', write_still=True)
+
+    def finish_render_queue(self, context, success, message=None):
+        if self._finalized:
+            return {'FINISHED'} if success else {'CANCELLED'}
+
+        self._finalized = True
+        type(self)._is_running = False
+
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+        context.window_manager.progress_end()
+        self.restore_scene(self._scene, self._initial_state, self._fixed_camera)
+
+        if success:
+            try:
+                self.archive_output(self._output_path)
+            except Exception as exception:
+                self.report({'ERROR'}, 'COS archive failed: {}'.format(exception))
+                return {'CANCELLED'}
+
+            self.report({'INFO'}, 'COS dataset saved to {}.zip'.format(self._output_path))
+            return {'FINISHED'}
+
+        if message is not None:
+            self.report({'WARNING'}, message)
+        return {'CANCELLED'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.finish_render_queue(
+                context,
+                False,
+                'COS export cancelled. Partial files remain in {}.'.format(self._output_path)
+            )
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        if self._render_index >= len(self._render_tasks):
+            return self.finish_render_queue(context, True)
+
+        try:
+            render_result = self.render_frame(context)
+        except Exception as exception:
+            return self.finish_render_queue(
+                context,
+                False,
+                'COS render failed: {}. Partial files remain in {}.'.format(
+                    exception,
+                    self._output_path
+                )
+            )
+
+        if 'CANCELLED' in render_result:
+            return self.finish_render_queue(
+                context,
+                False,
+                'Blender cancelled render {} of {}. Partial files remain in {}.'.format(
+                    self._render_index + 1,
+                    len(self._render_tasks),
+                    self._output_path
+                )
+            )
+
+        self._render_index += 1
+        context.window_manager.progress_update(self._render_index)
+
+        if context.screen is not None:
+            for area in context.screen.areas:
+                area.tag_redraw()
+
+        if self._render_index >= len(self._render_tasks):
+            return self.finish_render_queue(context, True)
+
+        return {'RUNNING_MODAL'}
+
+    def start_render_queue(self, context, scene, output_path, initial_state, fixed_camera, render_tasks):
+        self._scene = scene
+        self._output_path = output_path
+        self._initial_state = initial_state
+        self._fixed_camera = fixed_camera
+        self._render_tasks = render_tasks
+        self._render_index = 0
+        self._finalized = False
+        self._timer = None
+
+        type(self)._is_running = True
+        context.window_manager.progress_begin(0, len(render_tasks))
+        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        context.window_manager.modal_handler_add(self)
+
+        return {'RUNNING_MODAL'}
+
     def execute(self, context):
         scene = context.scene
 
@@ -172,6 +300,7 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
         )
         fixed_camera = None
         export_error = None
+        render_tasks = []
 
         try:
             if scene.logs:
@@ -211,39 +340,53 @@ class CameraOnSphere(blender_nerf_operator.BlenderNeRF_Operator):
                 )
 
             if scene.train_data:
-                self.export_split(
+                render_tasks.extend(self.prepare_split(
                     context, scene, output_path, 'train', train_frames,
                     sphere_camera, seed=base_seed
-                )
+                ))
 
             if scene.cos_val_data:
-                self.export_split(
+                render_tasks.extend(self.prepare_split(
                     context, scene, output_path, 'val', eval_frames,
                     sphere_camera, seed=scene.cos_val_seed
-                )
+                ))
 
             if scene.test_data:
-                self.export_split(
+                render_tasks.extend(self.prepare_split(
                     context, scene, output_path, 'test', eval_frames,
                     sphere_camera, seed=scene.cos_test_seed
-                )
+                ))
 
             if scene.cos_fixed_data:
                 fixed_matrix = fixed_camera.matrix_world.copy()
-                self.export_split(
+                render_tasks.extend(self.prepare_split(
                     context, scene, output_path, 'fixed', train_frames,
                     fixed_camera, fixed_matrix=fixed_matrix
-                )
+                ))
         except Exception as exception:
             export_error = exception
-        finally:
-            self.restore_scene(scene, initial_state, fixed_camera)
 
         if export_error is not None:
+            self.restore_scene(scene, initial_state, fixed_camera)
             self.report({'ERROR'}, 'COS export failed: {}'.format(export_error))
             return {'CANCELLED'}
 
-        shutil.make_archive(output_path, 'zip', output_path)
-        shutil.rmtree(output_path)
-        self.report({'INFO'}, 'COS dataset saved to {}.zip'.format(output_path))
-        return {'FINISHED'}
+        if not render_tasks:
+            self.restore_scene(scene, initial_state, fixed_camera)
+            try:
+                self.archive_output(output_path)
+            except Exception as exception:
+                self.report({'ERROR'}, 'COS archive failed: {}'.format(exception))
+                return {'CANCELLED'}
+
+            self.report({'INFO'}, 'COS dataset saved to {}.zip'.format(output_path))
+            return {'FINISHED'}
+
+        return self.start_render_queue(
+            context,
+            scene,
+            output_path,
+            initial_state,
+            fixed_camera,
+            render_tasks
+        )

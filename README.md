@@ -136,6 +136,8 @@ Train and fixed export every frame in the inclusive scene animation range. Valid
 
 COS outputs `train`, `val`, `test`, and `fixed` image folders with corresponding `transforms_*.json` files. NeRF mode uses D-NeRF-compatible extensionless relative paths and requires PNG rendering. The fixed split stores a different time for every animation frame while repeating one camera transform.
 
+COS renders one image per modal timer tick and returns control to Blender between images, so frame changes, progress, and cancellation remain visible without chaining asynchronous render jobs. Blender may still be busy while an individual image renders. Cancelling between images stops the queue, restores the initial scene state, and leaves partial output unarchived for inspection.
+
 
 ## Tips for Optimal Results
 

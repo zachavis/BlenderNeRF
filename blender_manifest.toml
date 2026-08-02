@@ -14,3 +14,13 @@ blender_version_min = "4.2.0"
 # license conforming to https://spdx.org/licenses/ (use "SPDX: prefix)
 # https://docs.blender.org/manual/en/dev/advanced/extensions/licenses.html
 license = ["SPDX:MIT",]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  "/*.zip",
+  "*.blend[1-9]",
+  "/docs/",
+  "/dist/",
+]
