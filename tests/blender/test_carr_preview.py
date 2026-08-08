@@ -54,4 +54,70 @@ with registered_addon() as addon:
     scene.carr_show_rig = False
     assert addon.carr_rig.CARR_COLLECTION_NAME not in bpy.data.collections
 
+
+def test_reserved_name_collisions_preserve_user_data_and_animate_managed_camera():
+    with registered_addon() as addon:
+        scene = bpy.context.scene
+        scene.frame_start = 1
+        scene.frame_end = 5
+        foreign_collection = bpy.data.collections.new(addon.carr_rig.CARR_COLLECTION_NAME)
+        scene.collection.children.link(foreign_collection)
+        foreign_test = bpy.data.objects.new(addon.carr_rig.CARR_TEST_NAME, None)
+        foreign_test.location = (8.0, 9.0, 10.0)
+        foreign_collection.objects.link(foreign_test)
+
+        scene.carr_show_rig = True
+        managed_collections = [
+            collection for collection in bpy.data.collections
+            if collection.get(addon.carr_rig.MANAGED_KEY)
+        ]
+        assert len(managed_collections) == 1
+        managed_collection = managed_collections[0]
+        assert managed_collection is not foreign_collection
+        managed_test = next(
+            obj for obj in managed_collection.objects
+            if obj.get(addon.carr_rig.MANAGED_KEY)
+            and obj.type == 'CAMERA'
+            and obj.name.startswith(addon.carr_rig.CARR_TEST_NAME)
+        )
+
+        scene.frame_set(1)
+        managed_start = matrix_rows(managed_test.matrix_world)
+        scene.frame_set(3)
+        managed_middle = matrix_rows(managed_test.matrix_world)
+        assert tuple(foreign_test.location) == (8.0, 9.0, 10.0)
+        assert managed_start != managed_middle
+
+        scene.carr_show_rig = False
+        assert foreign_collection.name in bpy.data.collections
+        assert foreign_test.name in bpy.data.objects
+        assert not [
+            collection for collection in bpy.data.collections
+            if collection.get(addon.carr_rig.MANAGED_KEY)
+        ]
+
+    bpy.data.objects.remove(foreign_test, do_unlink=True)
+    bpy.data.collections.remove(foreign_collection)
+
+
+test_reserved_name_collisions_preserve_user_data_and_animate_managed_camera()
+
+
+def test_unregister_removes_visible_managed_preview():
+    addon.register()
+    scene = bpy.context.scene
+    scene.carr_show_rig = True
+    assert [collection for collection in bpy.data.collections if collection.get(addon.carr_rig.MANAGED_KEY)]
+    assert [obj for obj in bpy.data.objects if obj.get(addon.carr_rig.MANAGED_KEY)]
+    assert [camera for camera in bpy.data.cameras if camera.get(addon.carr_rig.MANAGED_KEY)]
+
+    addon.unregister()
+
+    assert not [collection for collection in bpy.data.collections if collection.get(addon.carr_rig.MANAGED_KEY)]
+    assert not [obj for obj in bpy.data.objects if obj.get(addon.carr_rig.MANAGED_KEY)]
+    assert not [camera for camera in bpy.data.cameras if camera.get(addon.carr_rig.MANAGED_KEY)]
+
+
+test_unregister_removes_visible_managed_preview()
+
 print('CArr preview checks passed')

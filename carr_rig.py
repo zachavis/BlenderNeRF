@@ -49,10 +49,30 @@ def _remove_unused_managed_cameras():
             bpy.data.cameras.remove(camera)
 
 
+def _managed_collections():
+    return [collection for collection in bpy.data.collections if collection.get(MANAGED_KEY)]
+
+
+def _managed_test_camera(scene):
+    for collection in scene.collection.children:
+        if not collection.get(MANAGED_KEY):
+            continue
+        for obj in collection.objects:
+            if (
+                obj.get(MANAGED_KEY)
+                and obj.type == 'CAMERA'
+                and obj.name.startswith(CARR_TEST_NAME)
+            ):
+                return obj
+    return None
+
+
 def ensure_preview(context):
     scene = context.scene
-    collection = bpy.data.collections.get(CARR_COLLECTION_NAME)
-    if collection is None:
+    collections = _managed_collections()
+    if collections:
+        collection = collections[0]
+    else:
         collection = bpy.data.collections.new(CARR_COLLECTION_NAME)
         collection[MANAGED_KEY] = True
     if collection.name not in scene.collection.children:
@@ -89,8 +109,7 @@ def ensure_preview(context):
 
 
 def remove_preview(scene):
-    collection = bpy.data.collections.get(CARR_COLLECTION_NAME)
-    if collection is not None:
+    for collection in _managed_collections():
         _remove_managed_objects(collection)
         if not collection.objects:
             bpy.data.collections.remove(collection)
@@ -111,8 +130,11 @@ def carr_rig_property_update(scene, context):
 
 @persistent
 def carr_frame_change(scene):
-    if not scene.carr_show_rig or CARR_TEST_NAME not in scene.objects:
+    if not scene.carr_show_rig:
+        return
+    test = _managed_test_camera(scene)
+    if test is None:
         return
     frame_count = scene.frame_end - scene.frame_start + 1
     output_index = scene.frame_current - scene.frame_start
-    scene.objects[CARR_TEST_NAME].matrix_world = test_camera_matrix(scene, output_index, frame_count)
+    test.matrix_world = test_camera_matrix(scene, output_index, frame_count)

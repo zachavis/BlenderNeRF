@@ -156,6 +156,8 @@ def register():
 
 # deregister addon
 def unregister():
+    carr_rig.remove_preview(bpy.context.scene)
+
     for (prop_name, _) in PROPS:
         delattr(bpy.types.Scene, prop_name)
 
