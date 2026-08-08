@@ -1,5 +1,5 @@
 import bpy
-from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, sof_operator, ttc_operator, cos_operator
+from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, sof_operator, ttc_operator, cos_operator, carr_rig
 
 
 # blender info
@@ -86,6 +86,38 @@ PROPS = [
     ('upper_views', bpy.props.BoolProperty(name='Upper Views', description='Whether to sample views from the upper hemisphere of the training sphere only', default=False) ),
     ('outwards', bpy.props.BoolProperty(name='Outwards', description='Whether to point the camera outwards of the training sphere', default=False, update=helper.properties_ui_upd) ),
 
+    # carr properties
+    ('carr_dataset_name', bpy.props.StringProperty(name='Name', description='Name of the CArr dataset directory', default='dataset')),
+    ('carr_geometry', bpy.props.EnumProperty(
+        name='Geometry',
+        items=(
+            ('CIRCLE', 'Circle', 'Equally spaced cameras on the local XY circle'),
+            ('HEMISPHERE', 'Hemisphere', 'Near-uniform cameras on the local +Z hemisphere'),
+            ('SPHERE', 'Sphere', 'Near-uniform cameras on the full sphere'),
+        ),
+        default='CIRCLE', update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_camera_count', bpy.props.IntProperty(
+        name='Camera Count', default=10, min=2,
+        description='Number of fixed synchronized training cameras',
+        update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_location', bpy.props.FloatVectorProperty(
+        name='Location', unit='LENGTH', update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_rotation', bpy.props.FloatVectorProperty(
+        name='Rotation', unit='ROTATION', subtype='EULER', update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_radius', bpy.props.FloatProperty(
+        name='Radius', default=4.0, min=0.001, unit='LENGTH', update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_focal', bpy.props.FloatProperty(
+        name='Lens', default=50.0, min=1.0, max=5000.0, unit='CAMERA', update=carr_rig.carr_rig_property_update,
+    )),
+    ('carr_show_rig', bpy.props.BoolProperty(
+        name='Show Rig', default=False, update=carr_rig.carr_show_rig_update,
+    )),
+
     # cos automatic properties
     ('sphere_exists', bpy.props.BoolProperty(name='Sphere Exists', description='Whether the sphere exists', default=False) ),
     ('init_sphere_exists', bpy.props.BoolProperty(name='Init sphere exists', description='Whether the sphere initially exists', default=False) ),
@@ -119,6 +151,8 @@ def register():
     bpy.app.handlers.frame_change_post.append(helper.cos_camera_update)
     bpy.app.handlers.depsgraph_update_post.append(helper.properties_desgraph_upd)
     bpy.app.handlers.depsgraph_update_post.append(helper.set_init_props)
+    if carr_rig.carr_frame_change not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(carr_rig.carr_frame_change)
 
 # deregister addon
 def unregister():
@@ -130,6 +164,8 @@ def unregister():
     bpy.app.handlers.frame_change_post.remove(helper.cos_camera_update)
     bpy.app.handlers.depsgraph_update_post.remove(helper.properties_desgraph_upd)
     # bpy.app.handlers.depsgraph_update_post.remove(helper.set_init_props)
+    if carr_rig.carr_frame_change in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(carr_rig.carr_frame_change)
 
     for cls in CLASSES:
         bpy.utils.unregister_class(cls)
