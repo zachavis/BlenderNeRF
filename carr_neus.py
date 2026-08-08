@@ -27,7 +27,7 @@ def intrinsic_matrix(lens, sensor_width, sensor_height, sensor_fit, res_x, res_y
     ratio = aspect_x / aspect_y
     fit = sensor_fit
     if fit == 'AUTO':
-        fit = 'VERTICAL' if width < height or (width == height and aspect_x * width <= aspect_y * height) else 'HORIZONTAL'
+        fit = 'VERTICAL' if aspect_x * width <= aspect_y * height else 'HORIZONTAL'
     if fit == 'HORIZONTAL':
         fl_x = lens / sensor_width * width
         fl_y = lens / sensor_width * width * ratio

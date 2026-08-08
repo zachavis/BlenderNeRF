@@ -31,6 +31,30 @@ def test_vertical_and_auto_portrait_intrinsics_match():
     assert automatic == pytest.approx(expected)
 
 
+def test_auto_intrinsics_use_pixel_aspect_for_effective_dimensions():
+    actual = carr_neus.intrinsic_matrix(
+        50.0, 36.0, 24.0, 'AUTO', 800, 600, 100.0, 1.0, 2.0
+    )
+    expected = np.array([
+        [2222.222222222222, 0.0, 400.0],
+        [0.0, 1111.111111111111, 300.0],
+        [0.0, 0.0, 1.0],
+    ])
+    assert actual == pytest.approx(expected)
+
+
+def test_intrinsics_apply_render_resolution_percentage():
+    actual = carr_neus.intrinsic_matrix(
+        50.0, 10.0, 10.0, 'HORIZONTAL', 800, 600, 25.0, 1.0, 1.0
+    )
+    expected = np.array([
+        [1000.0, 0.0, 100.0],
+        [0.0, 1000.0, 75.0],
+        [0.0, 0.0, 1.0],
+    ])
+    assert actual == pytest.approx(expected)
+
+
 def test_missing_numpy_is_reported_at_call_time(monkeypatch):
     monkeypatch.setattr(carr_neus, '_numpy', None)
     assert carr_neus.numpy_available() is False
@@ -70,3 +94,8 @@ def test_archive_matches_reference_order_shapes_and_dtypes(tmp_path):
     loaded = np.load(output)
     assert loaded.files == expected_keys
     assert loaded['world_mat_2'] == pytest.approx(worlds[2])
+    assert loaded['world_mat_2'].shape == (3, 4)
+    assert loaded['world_mat_2'].dtype == np.float64
+    assert loaded['scale_mat_2'].shape == (4, 4)
+    assert loaded['scale_mat_2'].dtype == np.float32
+    assert loaded['scale_mat_2'] == pytest.approx(np.eye(4, dtype=np.float32))
