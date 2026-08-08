@@ -13,6 +13,56 @@ def _surface_point(z, theta):
     return (rho * math.cos(theta), rho * math.sin(theta), z)
 
 
+def _dot(left, right):
+    return sum(left[index] * right[index] for index in range(3))
+
+
+def _cross(left, right):
+    return (
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    )
+
+
+def _scale(vector, scalar):
+    return tuple(component * scalar for component in vector)
+
+
+def _normalize(vector):
+    magnitude = math.sqrt(_dot(vector, vector))
+    if magnitude <= 1.0e-12:
+        raise ValueError('Cannot normalize a zero-length vector')
+    return _scale(vector, 1.0 / magnitude)
+
+
+def transform_direction(direction, rotation_rows):
+    return tuple(_dot(row, direction) for row in rotation_rows)
+
+
+def transform_position(point, location, rotation_rows, radius):
+    if radius <= 0.0:
+        raise ValueError('CArr radius must be positive')
+    rotated = transform_direction(_scale(point, radius), rotation_rows)
+    return tuple(location[index] + rotated[index] for index in range(3))
+
+
+def look_at_matrix(camera_position, target, preferred_up, fallback_up):
+    forward = _normalize(tuple(target[i] - camera_position[i] for i in range(3)))
+    up = _normalize(preferred_up)
+    if abs(_dot(forward, up)) >= 1.0 - 1.0e-6:
+        up = _normalize(fallback_up)
+    right = _normalize(_cross(forward, up))
+    corrected_up = _normalize(_cross(right, forward))
+    local_z = _scale(forward, -1.0)
+    return (
+        (right[0], corrected_up[0], local_z[0], camera_position[0]),
+        (right[1], corrected_up[1], local_z[1], camera_position[1]),
+        (right[2], corrected_up[2], local_z[2], camera_position[2]),
+        (0.0, 0.0, 0.0, 1.0),
+    )
+
+
 def train_local_positions(geometry, count):
     if geometry not in GEOMETRIES:
         raise ValueError('Unknown CArr geometry: {}'.format(geometry))

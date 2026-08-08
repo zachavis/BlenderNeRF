@@ -68,3 +68,27 @@ def test_single_frame_uses_trajectory_parameter_zero():
     assert carr_geometry.test_local_position(carr_geometry.CIRCLE, 0, 1) == pytest.approx((1.0, 0.0, 0.0))
     assert carr_geometry.test_local_position(carr_geometry.HEMISPHERE, 0, 1) == pytest.approx((0.0, 0.0, 1.0))
     assert carr_geometry.test_local_position(carr_geometry.SPHERE, 0, 1) == pytest.approx((0.0, 0.0, 1.0))
+
+
+def test_transform_position_applies_radius_rotation_then_translation():
+    rotation = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+    actual = carr_geometry.transform_position((1.0, 0.0, 0.0), (10.0, 20.0, 30.0), rotation, 4.0)
+    assert actual == pytest.approx((10.0, 24.0, 30.0))
+
+
+def test_look_at_points_local_negative_z_at_target():
+    matrix = carr_geometry.look_at_matrix(
+        (4.0, 0.0, 0.0), (0.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0), (0.0, 1.0, 0.0),
+    )
+    assert tuple(-matrix[row][2] for row in range(3)) == pytest.approx((-1.0, 0.0, 0.0))
+    assert tuple(matrix[row][3] for row in range(3)) == pytest.approx((4.0, 0.0, 0.0))
+
+
+def test_look_at_uses_fallback_at_positive_pole():
+    matrix = carr_geometry.look_at_matrix(
+        (0.0, 0.0, 4.0), (0.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0), (0.0, 1.0, 0.0),
+    )
+    assert tuple(-matrix[row][2] for row in range(3)) == pytest.approx((0.0, 0.0, -1.0))
+    assert length(tuple(matrix[row][0] for row in range(3))) == pytest.approx(1.0)
