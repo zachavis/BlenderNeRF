@@ -68,14 +68,16 @@ def validate_export(scene):
     save_path = Path(bpy.path.abspath(scene.save_path))
     output_path = save_path / dataset_name
     try:
-        existing_parent = save_path
-        while not existing_parent.exists() and existing_parent != existing_parent.parent:
-            existing_parent = existing_parent.parent
-        if not existing_parent.is_dir() or not os.access(existing_parent, os.W_OK):
-            raise CArrValidationError('CArr save path is not a usable directory: {}'.format(save_path))
-        if save_path.exists() and not save_path.is_dir():
-            raise CArrValidationError('CArr save path is not a usable directory: {}'.format(save_path))
-        if output_path.exists() and not output_path.is_dir():
+        existing_target = None
+        for component in list(reversed(output_path.parents)) + [output_path]:
+            if not os.path.lexists(component):
+                continue
+            if not component.exists():
+                raise CArrValidationError('CArr path contains a broken symlink: {}'.format(component))
+            if not component.is_dir():
+                raise CArrValidationError('CArr path component is not a usable directory: {}'.format(component))
+            existing_target = component
+        if existing_target is None or not os.access(existing_target, os.W_OK):
             raise CArrValidationError('CArr target path is not a usable directory: {}'.format(output_path))
         if output_path.is_dir() and any(output_path.iterdir()):
             raise CArrValidationError('CArr refuses to use an existing non-empty target: {}'.format(output_path))

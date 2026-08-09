@@ -165,6 +165,49 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     else:
         raise AssertionError('CArr accepted a target beneath a file')
 
+    scene.save_path = temporary
+    scene.carr_dataset_name = 'empty unwritable'
+    unwritable_target = Path(temporary) / 'empty_unwritable'
+    unwritable_target.mkdir()
+    original_access = carr_operator.os.access
+
+    def target_is_not_writable(path, mode):
+        if Path(path) == unwritable_target:
+            return False
+        return original_access(path, mode)
+
+    carr_operator.os.access = target_is_not_writable
+    try:
+        try:
+            carr_operator.validate_export(scene)
+        except carr_operator.CArrValidationError as exception:
+            assert 'usable' in str(exception)
+        else:
+            raise AssertionError('CArr accepted an existing unwritable target')
+    finally:
+        carr_operator.os.access = original_access
+
+    broken_link = Path(temporary) / 'broken_link'
+    scene.save_path = str(broken_link)
+    scene.carr_dataset_name = 'dataset'
+    original_lexists = carr_operator.os.path.lexists
+
+    def broken_link_lexists(path):
+        if Path(path) == broken_link:
+            return True
+        return original_lexists(path)
+
+    carr_operator.os.path.lexists = broken_link_lexists
+    try:
+        try:
+            carr_operator.validate_export(scene)
+        except carr_operator.CArrValidationError as exception:
+            assert 'symlink' in str(exception).lower()
+        else:
+            raise AssertionError('CArr accepted a broken save-path symlink')
+    finally:
+        carr_operator.os.path.lexists = original_lexists
+
 with registered_addon(), tempfile.TemporaryDirectory() as temporary:
     from BlenderNeRF import carr_operator, carr_rig
     scene = bpy.context.scene
