@@ -31,6 +31,27 @@ class ModalHarness:
         self.reports.append((report_type, message))
 
 
+class FailingCleanupWindowManager:
+    def __init__(self, wrapped, fail_timer=False, fail_progress=False):
+        self.wrapped = wrapped
+        self.fail_timer = fail_timer
+        self.fail_progress = fail_progress
+        self.timer_remove_attempts = 0
+        self.progress_end_attempts = 0
+
+    def event_timer_remove(self, timer):
+        self.timer_remove_attempts += 1
+        if self.fail_timer:
+            raise RuntimeError('forced timer cleanup failure')
+        self.wrapped.event_timer_remove(timer)
+
+    def progress_end(self):
+        self.progress_end_attempts += 1
+        if self.fail_progress:
+            raise RuntimeError('forced progress cleanup failure')
+        self.wrapped.progress_end()
+
+
 with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     from BlenderNeRF import carr_operator
     scene = bpy.context.scene
@@ -141,5 +162,40 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     assert 'Blender frame 3' in failed_harness.reports[0][1]
     assert 'Partial files remain' in failed_harness.reports[-1][1]
     assert_restored(failed)
+
+    timer_cleanup = start_modal('timer_cleanup_failure', False, True)
+    timer_cleanup_harness = ModalHarness(timer_cleanup)
+    timer_cleanup_harness._timer = object()
+    timer_cleanup_manager = FailingCleanupWindowManager(
+        bpy.context.window_manager, fail_timer=True
+    )
+    timer_cleanup_context = SimpleNamespace(
+        scene=scene, window_manager=timer_cleanup_manager
+    )
+    assert timer_cleanup_harness._finish(timer_cleanup_context, True) == {'FINISHED'}
+    assert timer_cleanup_manager.timer_remove_attempts == 1
+    assert timer_cleanup_manager.progress_end_attempts == 1
+    assert_restored(timer_cleanup)
+    assert timer_cleanup_harness.reports[-1][0] == {'INFO'}
+    assert timer_cleanup_harness._finish(timer_cleanup_context, True) == {'FINISHED'}
+    assert timer_cleanup_manager.timer_remove_attempts == 1
+    assert len(timer_cleanup_harness.reports) == 1
+
+    progress_cleanup = start_modal('progress_cleanup_failure', False, True)
+    progress_cleanup_harness = ModalHarness(progress_cleanup)
+    progress_cleanup_manager = FailingCleanupWindowManager(
+        bpy.context.window_manager, fail_progress=True
+    )
+    progress_cleanup_context = SimpleNamespace(
+        scene=scene, window_manager=progress_cleanup_manager
+    )
+    assert progress_cleanup_harness._finish(progress_cleanup_context, False) == {'CANCELLED'}
+    assert progress_cleanup_manager.progress_end_attempts == 1
+    assert_restored(progress_cleanup)
+    assert progress_cleanup_harness.reports[-1][0] == {'WARNING'}
+    assert 'Partial files remain' in progress_cleanup_harness.reports[-1][1]
+    assert progress_cleanup_harness._finish(progress_cleanup_context, False) == {'CANCELLED'}
+    assert progress_cleanup_manager.progress_end_attempts == 1
+    assert len(progress_cleanup_harness.reports) == 1
 
 print('CArr render checks passed')

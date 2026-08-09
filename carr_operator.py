@@ -405,14 +405,24 @@ class CameraArray(bpy.types.Operator):
         type(self)._is_running = False
 
         if self._timer is not None:
-            context.window_manager.event_timer_remove(self._timer)
+            timer = self._timer
             self._timer = None
+            try:
+                context.window_manager.event_timer_remove(timer)
+            except Exception:
+                pass
 
         if self._progress_started:
-            context.window_manager.progress_end()
             self._progress_started = False
+            try:
+                context.window_manager.progress_end()
+            except Exception:
+                pass
 
-        restore_scene(context.scene, self._prepared.initial_state)
+        try:
+            restore_scene(context.scene, self._prepared.initial_state)
+        except Exception:
+            pass
 
         if success:
             self.report({'INFO'}, 'CArr dataset saved to {}.'.format(self._prepared.output_path))
