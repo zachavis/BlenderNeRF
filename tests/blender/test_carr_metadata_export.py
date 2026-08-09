@@ -17,7 +17,7 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     scene = bpy.context.scene
     scene.frame_start = 10
     scene.frame_end = 12
-    scene.frame_set(11)
+    scene.frame_set(30)
     original = (scene.frame_current, scene.camera, scene.render.filepath)
     original_render = (
         scene.render.image_settings.file_format,
@@ -52,11 +52,26 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
         '001', '001', '001',
         '002', '002', '002',
     ]
+    assert scene.frame_current == 30
+
+    camera = prepared.test_camera
+    camera.data.lens = 50.0
+    camera.data.sensor_width = 36.0
+    camera.data.sensor_height = 24.0
+    camera.data.sensor_fit = 'VERTICAL'
+    blender_projection = camera.calc_matrix_camera(
+        bpy.context.evaluated_depsgraph_get(), x=600, y=800, scale_x=1.0, scale_y=1.0
+    )
+    carr_intrinsics = carr_operator.carr_neus.intrinsic_matrix(
+        50.0, 36.0, 24.0, 'VERTICAL', 600, 800, 100, 1.0, 1.0
+    )
+    assert np.isclose(carr_intrinsics[0, 0], blender_projection[0][0] * 600.0 / 2.0)
+    assert np.isclose(carr_intrinsics[1, 1], blender_projection[1][1] * 800.0 / 2.0)
     original_camera_settings = (
-        prepared.test_camera.data.lens,
-        prepared.test_camera.data.sensor_width,
-        prepared.test_camera.data.sensor_height,
-        prepared.test_camera.data.sensor_fit,
+        prepared.initial_state['lens'],
+        prepared.initial_state['sensor_width'],
+        prepared.initial_state['sensor_height'],
+        prepared.initial_state['sensor_fit'],
     )
     scene.frame_set(12)
     scene.camera = prepared.test_camera

@@ -30,6 +30,7 @@ class RenderCalibration:
 class RenderTask:
     split: str
     camera: object
+    camera_label: str
     blender_frame: int
     output_index: int
     filepath: str
@@ -220,6 +221,7 @@ def prepare_export(context):
                 tasks.append(RenderTask(
                     split='train',
                     camera=camera,
+                    camera_label=camera.name,
                     blender_frame=blender_frame,
                     output_index=output_index,
                     filepath=_render_filepath(_camera_root(output_path, 'train', camera_index), output_index),
@@ -229,6 +231,7 @@ def prepare_export(context):
                 tasks.append(RenderTask(
                     split='test',
                     camera=test_camera,
+                    camera_label=test_camera.name,
                     blender_frame=blender_frame,
                     output_index=output_index,
                     filepath=_render_filepath(_camera_root(output_path, 'test'), output_index),
@@ -255,25 +258,40 @@ def prepare_export(context):
 
 
 def restore_scene(scene, initial_state):
-    scene.render.filepath = initial_state['render_filepath']
-    scene.render.image_settings.file_format = initial_state['file_format']
-    scene.render.image_settings.color_mode = initial_state['color_mode']
-    scene.render.use_file_extension = initial_state['use_file_extension']
-    scene.render.resolution_x = initial_state['resolution_x']
-    scene.render.resolution_y = initial_state['resolution_y']
-    scene.render.resolution_percentage = initial_state['resolution_percentage']
-    scene.render.pixel_aspect_x = initial_state['pixel_aspect_x']
-    scene.render.pixel_aspect_y = initial_state['pixel_aspect_y']
+    errors = []
+
+    def restore_attribute(target, attribute, value):
+        try:
+            setattr(target, attribute, value)
+        except Exception as exception:
+            errors.append('{}: {}'.format(attribute, exception))
+
+    restore_attribute(scene.render, 'filepath', initial_state['render_filepath'])
+    restore_attribute(scene.render.image_settings, 'file_format', initial_state['file_format'])
+    restore_attribute(scene.render.image_settings, 'color_mode', initial_state['color_mode'])
+    restore_attribute(scene.render, 'use_file_extension', initial_state['use_file_extension'])
+    restore_attribute(scene.render, 'resolution_x', initial_state['resolution_x'])
+    restore_attribute(scene.render, 'resolution_y', initial_state['resolution_y'])
+    restore_attribute(scene.render, 'resolution_percentage', initial_state['resolution_percentage'])
+    restore_attribute(scene.render, 'pixel_aspect_x', initial_state['pixel_aspect_x'])
+    restore_attribute(scene.render, 'pixel_aspect_y', initial_state['pixel_aspect_y'])
     camera_data = initial_state.get('camera_data')
     if camera_data is None and carr_rig.CARR_TEST_NAME in scene.objects:
         camera_data = scene.objects[carr_rig.CARR_TEST_NAME].data
     if camera_data is not None:
-        camera_data.lens = initial_state['lens']
-        camera_data.sensor_width = initial_state['sensor_width']
-        camera_data.sensor_height = initial_state['sensor_height']
-        camera_data.sensor_fit = initial_state['sensor_fit']
-    scene.camera = initial_state['camera']
-    scene.frame_set(initial_state['frame'])
+        restore_attribute(camera_data, 'lens', initial_state['lens'])
+        restore_attribute(camera_data, 'sensor_width', initial_state['sensor_width'])
+        restore_attribute(camera_data, 'sensor_height', initial_state['sensor_height'])
+        restore_attribute(camera_data, 'sensor_fit', initial_state['sensor_fit'])
+    try:
+        restore_attribute(scene, 'camera', initial_state['camera'])
+    finally:
+        try:
+            scene.frame_set(initial_state['frame'])
+        except Exception as exception:
+            errors.append('frame: {}'.format(exception))
+    if errors:
+        raise RuntimeError('; '.join(errors))
 
 
 def configure_rgba(scene):
@@ -329,7 +347,11 @@ class CameraArray(bpy.types.Operator):
             self.report({'ERROR'}, 'CArr export failed: {}'.format(exception))
             return {'CANCELLED'}
         if not context.scene.render_frames:
-            complete_metadata_only(context, prepared)
+            try:
+                complete_metadata_only(context, prepared)
+            except Exception as exception:
+                self.report({'ERROR'}, 'CArr scene restoration failed: {}'.format(exception))
+                return {'CANCELLED'}
             self.report({'INFO'}, 'CArr dataset saved to {}.'.format(prepared.output_path))
             return {'FINISHED'}
         return self._start_queue(context, prepared)
@@ -371,7 +393,7 @@ class CameraArray(bpy.types.Operator):
             self.report(
                 {'ERROR'},
                 'CArr render failed for camera {} at Blender frame {}: {}'.format(
-                    task.camera.name, task.blender_frame, exception
+                    task.camera_label, task.blender_frame, exception
                 ),
             )
             return self._finish(context, False)
@@ -380,7 +402,7 @@ class CameraArray(bpy.types.Operator):
             self.report(
                 {'ERROR'},
                 'Blender cancelled CArr render for camera {} at Blender frame {}.'.format(
-                    task.camera.name, task.blender_frame
+                    task.camera_label, task.blender_frame
                 ),
             )
             return self._finish(context, False)
@@ -419,10 +441,20 @@ class CameraArray(bpy.types.Operator):
             except Exception:
                 pass
 
+        restoration_error = None
         try:
             restore_scene(context.scene, self._prepared.initial_state)
-        except Exception:
-            pass
+        except Exception as exception:
+            restoration_error = exception
+
+        if restoration_error is not None:
+            self.report(
+                {'ERROR'},
+                'CArr scene restoration failed: {}. Partial files remain in {}.'.format(
+                    restoration_error, self._prepared.output_path
+                ),
+            )
+            return {'CANCELLED'}
 
         if success:
             self.report({'INFO'}, 'CArr dataset saved to {}.'.format(self._prepared.output_path))

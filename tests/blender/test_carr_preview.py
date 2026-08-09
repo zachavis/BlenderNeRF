@@ -21,6 +21,7 @@ with registered_addon() as addon:
     scene.carr_rotation = (0.0, 0.0, 0.0)
     scene.carr_radius = 4.0
     scene.carr_focal = 50.0
+    scene.frame_set(-20)
     scene.carr_show_rig = True
 
     collection = bpy.data.collections[addon.carr_rig.CARR_COLLECTION_NAME]
@@ -34,6 +35,12 @@ with registered_addon() as addon:
     assert all(obj.data is train[0].data for obj in train + [test])
     assert train[0].data.lens == 50.0
     assert all(math.isclose(obj.location.length, 4.0, rel_tol=1.0e-6) for obj in train)
+    expected_clamped = matrix_rows(addon.carr_rig.test_camera_matrix(scene, 0, 5))
+    assert all(
+        math.isclose(actual, expected, abs_tol=1.0e-6)
+        for actual_row, expected_row in zip(matrix_rows(test.matrix_world), expected_clamped)
+        for actual, expected in zip(actual_row, expected_row)
+    )
 
     fixed_before = [matrix_rows(obj.matrix_world) for obj in train]
     scene.frame_set(1)

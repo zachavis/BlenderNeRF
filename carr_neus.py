@@ -32,9 +32,9 @@ def intrinsic_matrix(lens, sensor_width, sensor_height, sensor_fit, res_x, res_y
         fl_x = lens / sensor_width * width
         fl_y = lens / sensor_width * width * ratio
     elif fit == 'VERTICAL':
-        sensor_size = sensor_height if width <= height else sensor_width
-        fl_x = lens / sensor_size * width / ratio
-        fl_y = lens / sensor_size * width
+        vertical_view_factor = height / ratio
+        fl_x = lens / sensor_height * vertical_view_factor
+        fl_y = fl_x * ratio
     else:
         raise ValueError('Unsupported Blender sensor fit: {}'.format(sensor_fit))
     return np.array([[fl_x, 0.0, width / 2.0], [0.0, fl_y, height / 2.0], [0.0, 0.0, 1.0]], dtype=np.float64)

@@ -52,6 +52,11 @@ class FailingCleanupWindowManager:
         self.wrapped.progress_end()
 
 
+class FailingCameraData:
+    def __setattr__(self, name, value):
+        raise RuntimeError('forced camera restoration failure')
+
+
 with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     from BlenderNeRF import carr_operator
     scene = bpy.context.scene
@@ -162,6 +167,42 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     assert 'Blender frame 3' in failed_harness.reports[0][1]
     assert 'Partial files remain' in failed_harness.reports[-1][1]
     assert_restored(failed)
+
+    live_edit = start_modal('modal_live_edit', True, False)
+    live_edit_harness = ModalHarness(live_edit)
+    carr_operator.CameraArray._is_running = True
+    assert live_edit_harness.modal(bpy.context, timer_event) == {'RUNNING_MODAL'}
+    queued_camera = live_edit.tasks[1].camera
+    scene.carr_camera_count = 3
+    scene.carr_show_rig = False
+    assert queued_camera.name in bpy.data.objects
+    carr_operator.CameraArray._is_running = False
+    assert live_edit_harness.modal(bpy.context, timer_event) == {'FINISHED'}
+    assert len(list(Path(live_edit.output_path).glob('*/rgb/*.png'))) == 2
+    assert live_edit_harness._finalized is True
+
+    deleted_camera = start_modal('modal_deleted_camera', True, False)
+    deleted_camera_harness = ModalHarness(deleted_camera)
+    task = deleted_camera.tasks[0]
+    expected_label = task.camera_label
+    bpy.data.objects.remove(task.camera, do_unlink=True)
+    assert deleted_camera_harness.modal(bpy.context, timer_event) == {'CANCELLED'}
+    assert expected_label in deleted_camera_harness.reports[0][1]
+    assert deleted_camera_harness._finalized is True
+    assert ModalHarness._is_running is False
+
+    restoration_failure = start_modal('restoration_failure', False, True)
+    restoration_failure_harness = ModalHarness(restoration_failure)
+    original_frame = restoration_failure.initial_state['frame']
+    original_camera = restoration_failure.initial_state['camera']
+    restoration_failure.initial_state['camera_data'] = FailingCameraData()
+    scene.frame_set(original_frame + 5)
+    scene.camera = restoration_failure.test_camera
+    assert restoration_failure_harness._finish(bpy.context, True) == {'CANCELLED'}
+    assert scene.frame_current == original_frame
+    assert scene.camera == original_camera
+    assert restoration_failure_harness.reports[-1][0] == {'ERROR'}
+    assert 'restoration failed' in restoration_failure_harness.reports[-1][1].lower()
 
     timer_cleanup = start_modal('timer_cleanup_failure', False, True)
     timer_cleanup_harness = ModalHarness(timer_cleanup)

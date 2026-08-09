@@ -37,6 +37,10 @@ def test_camera_matrix(scene, output_index, frame_count):
     return _pose_matrix(scene, point)
 
 
+def _preview_output_index(scene, frame_count):
+    return max(0, min(scene.frame_current - scene.frame_start, frame_count - 1))
+
+
 def _remove_managed_objects(collection):
     for obj in list(collection.objects):
         if obj.get(MANAGED_KEY):
@@ -102,7 +106,7 @@ def ensure_preview(context):
     test[MANAGED_KEY] = True
     collection.objects.link(test)
     frame_count = scene.frame_end - scene.frame_start + 1
-    output_index = scene.frame_current - scene.frame_start
+    output_index = _preview_output_index(scene, frame_count)
     test.matrix_world = test_camera_matrix(scene, output_index, frame_count)
     context.view_layer.update()
     return train_objects, test
@@ -116,7 +120,14 @@ def remove_preview(scene):
     _remove_unused_managed_cameras()
 
 
+def _export_is_running():
+    from . import carr_operator
+    return carr_operator.CameraArray._is_running
+
+
 def carr_show_rig_update(scene, context):
+    if _export_is_running():
+        return
     if scene.carr_show_rig:
         ensure_preview(context)
     else:
@@ -124,6 +135,8 @@ def carr_show_rig_update(scene, context):
 
 
 def carr_rig_property_update(scene, context):
+    if _export_is_running():
+        return
     if scene.carr_show_rig:
         ensure_preview(context)
 
@@ -136,5 +149,5 @@ def carr_frame_change(scene):
     if test is None:
         return
     frame_count = scene.frame_end - scene.frame_start + 1
-    output_index = scene.frame_current - scene.frame_start
+    output_index = _preview_output_index(scene, frame_count)
     test.matrix_world = test_camera_matrix(scene, output_index, frame_count)

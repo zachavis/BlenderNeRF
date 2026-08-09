@@ -26,7 +26,7 @@ def test_vertical_and_auto_portrait_intrinsics_match():
     automatic = carr_neus.intrinsic_matrix(
         arguments[0], arguments[1], arguments[2], 'AUTO', *arguments[3:]
     )
-    expected = np.array([[1000.0, 0.0, 200.0], [0.0, 1000.0, 400.0], [0.0, 0.0, 1.0]])
+    expected = np.array([[2000.0, 0.0, 200.0], [0.0, 2000.0, 400.0], [0.0, 0.0, 1.0]])
     assert vertical == pytest.approx(expected)
     assert automatic == pytest.approx(expected)
 
@@ -36,8 +36,8 @@ def test_auto_intrinsics_use_pixel_aspect_for_effective_dimensions():
         50.0, 36.0, 24.0, 'AUTO', 800, 600, 100.0, 1.0, 2.0
     )
     expected = np.array([
-        [2222.222222222222, 0.0, 400.0],
-        [0.0, 1111.111111111111, 300.0],
+        [2500.0, 0.0, 400.0],
+        [0.0, 1250.0, 300.0],
         [0.0, 0.0, 1.0],
     ])
     assert actual == pytest.approx(expected)
