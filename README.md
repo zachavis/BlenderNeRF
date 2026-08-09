@@ -41,7 +41,7 @@ Although release versions of **BlenderNeRF** are available for download, they ar
 
 ## Setting
 
-**BlenderNeRF** consists of 3 methods discussed in the sub-sections below. SOF and TTC create training images and train/test camera metadata. COS creates rendered train, validation, test, and fixed-camera splits with normalized time metadata for dynamic NeRF datasets. The selected data is archived into a single **ZIP** file.
+**BlenderNeRF** consists of four methods discussed in the sub-sections below. SOF and TTC create training images and train/test camera metadata. COS creates rendered train, validation, test, and fixed-camera splits with normalized time metadata for dynamic NeRF datasets. SOF, TTC, and COS archive their selected data into a single **ZIP** file. CArr instead creates an unarchived NeuS-style dataset directory for synchronized multiview sequences.
 
 ### Subset of Frames
 
@@ -67,10 +67,14 @@ Although release versions of **BlenderNeRF** are available for download, they ar
   <img src='https://maximeraafat.github.io/assets/posts/blendernerf/COS.gif' width='90%'/>
 </p>
 
+### Camera Array
+
+**Camera Array (CArr)** renders every animation frame from a fixed array of synchronized, inward-facing training cameras and from one automatically generated moving test camera. All training cameras share the same perspective intrinsics. Their positions use a circle, the local **+Z** hemisphere, or a full sphere around the rig center; the selected geometry also determines the test-camera trajectory.
+
 
 ## How to use the Methods
 
-The add-on properties panel is available under `3D View > N panel > BlenderNeRF` (the **N panel** is accessible under the 3D viewport when pressing `N`). All 3 methods (**SOF**, **TTC** and **COS**) share a common tab called `BlenderNeRF shared UI` with the below listed controllable properties.
+The add-on properties panel is available under `3D View > N panel > BlenderNeRF` (the **N panel** is accessible under the 3D viewport when pressing `N`). SOF, TTC, and COS share a common tab called `BlenderNeRF shared UI` with the below listed controllable properties. CArr has its own `Camera Array CArr` panel and reuses only the shared `Render Frames`, `Save Log File`, and `Save Path` controls; its Train and Test toggles are also shown in the CArr panel.
 
 * `Train` (activated by default) : whether to register training data (renderings + camera information)
 * `Test` (activated by default) : whether to register testing data (camera information only)
@@ -91,7 +95,7 @@ The [**Gaussian Splatting**](https://github.com/graphdeco-inria/gaussian-splatti
 
 The `File Format` property can either be **NGP** or **NeRF**. The **NGP** file format convention is the same as the **NeRF** one, with a few additional parameters which can be accessed by Instant NGP.
 
-Notice that each method has its distinctive `Name` property (by default set to `dataset`) corresponding to the dataset name and created **ZIP** filename for the respective method. Please note that unsupported characters, such as spaces, `#` or `/`, will automatically be replaced by an underscore.
+Notice that each method has its distinctive `Name` property (by default set to `dataset`). For SOF, TTC, and COS it determines the created **ZIP** filename; for CArr it determines the unarchived output directory name. Unsupported characters, such as spaces, `#` or `/`, are replaced by an underscore.
 
 Below are described the properties specific to each method (the `Name` property is left out, since already discussed above).
 
@@ -137,6 +141,48 @@ Train and fixed export every frame in the inclusive scene animation range. Valid
 COS outputs `train`, `val`, `test`, and `fixed` image folders with corresponding `transforms_*.json` files. NeRF mode uses D-NeRF-compatible extensionless relative paths and requires PNG rendering. The fixed split stores a different time for every animation frame while repeating one camera transform.
 
 COS renders one image per modal timer tick and returns control to Blender between images, so frame changes, progress, and cancellation remain visible without chaining asynchronous render jobs. Blender may still be busy while an individual image renders. Cancelling between images stops the queue, restores the initial scene state, and leaves partial output unarchived for inspection.
+
+### How to CArr
+
+* `Geometry` (**Circle** by default): fixed training-camera layout. **Circle** uses equally spaced cameras in the rig's local XY plane, **Hemisphere** samples the local +Z hemisphere, and **Sphere** samples the full sphere.
+* `Camera Count` (by default set to **10**): number of fixed, synchronized training cameras; at least two are required.
+* `Location` (by default set to the **0 m** vector): world-space center of the array rig.
+* `Rotation` (by default set to the **0°** vector): orientation applied to the complete array and its test trajectory.
+* `Radius` (by default set to **4 m**): distance from the rig center to every generated camera.
+* `Lens` (by default set to **50 mm**): shared focal length used by all training cameras and the test camera.
+* `Train` and `Test` (activated by default): select the fixed-camera training split, the moving-camera test split, or both. At least one split must be enabled.
+* `Show Rig` (deactivated by default): create and display the managed array, including the fixed training cameras and generated test camera, in the scene.
+* `Name` (by default set to `dataset`): unarchived dataset directory created beneath `Save Path`.
+* `PLAY CArr`: validate the request and begin the modal CArr export.
+
+Train cameras remain fixed while every selected camera captures the same inclusive scene frame range, so image indices stay synchronized across cameras. All cameras use the same intrinsics. The Circle test camera follows a closed circle; Hemisphere travels from the local +Z pole to the equator; Sphere travels from the local +Z pole to the local -Z pole.
+
+Each selected camera receives its own directory with an `rgb` directory and one `cameras_sphere.npz` archive. Train directories are named `cam_train_0` through `cam_train_<Camera Count - 1>`, and the test directory is named `cam_test`. A typical two-train-camera export is:
+
+```
+dataset/
+├── cam_train_0/
+│   ├── rgb/
+│   │   ├── 000.png
+│   │   └── ...
+│   └── cameras_sphere.npz
+├── cam_train_1/
+│   ├── rgb/
+│   │   ├── 000.png
+│   │   └── ...
+│   └── cameras_sphere.npz
+└── cam_test/
+    ├── rgb/
+    │   ├── 000.png
+    │   └── ...
+    └── cameras_sphere.npz
+```
+
+CArr writes PNG images as **RGBA** and does not create mask or depth directories. Every NPZ image entry uses an identity scale matrix and a world projection matrix, with image and matrix indices synchronized. Disabling shared `Render Frames` performs a metadata-only export: it creates the selected camera directories, empty `rgb` directories, and complete `cameras_sphere.npz` files. CArr never creates a ZIP file.
+
+The shared `AABB`, `Gaussian Points`, `File Format`, and `Path Format` controls do not affect CArr. `Save Log File` optionally writes the usual reproducibility log at the dataset root.
+
+CArr validates the complete request before export and will not overwrite a non-empty existing dataset directory. Rendering advances one image per modal timer tick so progress and cancellation are visible between images. Pressing Escape between images cancels the remaining queue, restores the initial frame, active camera, render filepath, and output settings, and retains partial output unarchived for inspection. The managed preview rig remains available after success, failure, or cancellation until `Show Rig` is disabled.
 
 
 ## Tips for Optimal Results

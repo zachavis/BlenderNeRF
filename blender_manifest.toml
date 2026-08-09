@@ -1,6 +1,6 @@
 id = "BlenderNeRF"
 name = "BlenderNeRF"
-version = "6.1.0"
+version = "6.2.0"
 type = "add-on"
 
 tagline = "Easy NeRF synthetic dataset creation within Blender"
@@ -22,5 +22,6 @@ paths_exclude_pattern = [
   "/*.zip",
   "*.blend[1-9]",
   "/docs/",
+  "/tests/",
   "/dist/",
 ]

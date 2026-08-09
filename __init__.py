@@ -1,5 +1,5 @@
 import bpy
-from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, sof_operator, ttc_operator, cos_operator, carr_operator, carr_rig
+from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, carr_ui, sof_operator, ttc_operator, cos_operator, carr_operator, carr_rig
 
 
 # blender info
@@ -7,7 +7,7 @@ bl_info = {
     'name': 'BlenderNeRF',
     'description': 'Easy NeRF synthetic dataset creation within Blender',
     'author': 'Maxime Raafat',
-    'version': (6, 1, 0),
+    'version': (6, 2, 0),
     'blender': (4, 2, 0),
     'location': '3D View > N panel > BlenderNeRF',
     'doc_url': 'https://github.com/maximeraafat/BlenderNeRF',
@@ -133,6 +133,7 @@ CLASSES = [
     sof_ui.SOF_UI,
     ttc_ui.TTC_UI,
     cos_ui.COS_UI,
+    carr_ui.CARR_UI,
     sof_operator.SubsetOfFrames,
     ttc_operator.TrainTestCameras,
     cos_operator.CameraOnSphere,
