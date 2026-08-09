@@ -1,5 +1,5 @@
 import bpy
-from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, sof_operator, ttc_operator, cos_operator, carr_rig
+from . import helper, blender_nerf_ui, sof_ui, ttc_ui, cos_ui, sof_operator, ttc_operator, cos_operator, carr_operator, carr_rig
 
 
 # blender info
@@ -135,7 +135,8 @@ CLASSES = [
     cos_ui.COS_UI,
     sof_operator.SubsetOfFrames,
     ttc_operator.TrainTestCameras,
-    cos_operator.CameraOnSphere
+    cos_operator.CameraOnSphere,
+    carr_operator.CameraArray
 ]
 
 # load addon

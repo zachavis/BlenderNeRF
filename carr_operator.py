@@ -276,6 +276,150 @@ def restore_scene(scene, initial_state):
     scene.frame_set(initial_state['frame'])
 
 
+def configure_rgba(scene):
+    scene.render.image_settings.file_format = 'PNG'
+    scene.render.image_settings.color_mode = 'RGBA'
+    scene.render.use_file_extension = True
+
+
+def apply_calibration(scene, camera, calibration):
+    camera.data.lens = calibration.lens
+    camera.data.sensor_width = calibration.sensor_width
+    camera.data.sensor_height = calibration.sensor_height
+    camera.data.sensor_fit = calibration.sensor_fit
+    scene.render.resolution_x = calibration.resolution_x
+    scene.render.resolution_y = calibration.resolution_y
+    scene.render.resolution_percentage = calibration.resolution_percentage
+    scene.render.pixel_aspect_x = calibration.pixel_aspect_x
+    scene.render.pixel_aspect_y = calibration.pixel_aspect_y
+
+
+def render_task(context, task, calibration):
+    scene = context.scene
+    scene.frame_set(task.blender_frame)
+    apply_calibration(scene, task.camera, calibration)
+    task.camera.matrix_world = task.matrix_world.copy()
+    context.view_layer.update()
+    scene.camera = task.camera
+    scene.render.filepath = task.filepath
+    return bpy.ops.render.render('EXEC_DEFAULT', write_still=True)
+
+
 def complete_metadata_only(context, prepared):
     restore_scene(context.scene, prepared.initial_state)
     return {'FINISHED'}
+
+
+class CameraArray(bpy.types.Operator):
+    bl_idname = 'object.camera_array'
+    bl_label = 'Camera Array CArr'
+    _is_running = False
+
+    @classmethod
+    def poll(cls, context):
+        return not cls._is_running
+
+    def execute(self, context):
+        try:
+            prepared = prepare_export(context)
+        except CArrValidationError as exception:
+            self.report({'ERROR'}, str(exception))
+            return {'CANCELLED'}
+        except Exception as exception:
+            self.report({'ERROR'}, 'CArr export failed: {}'.format(exception))
+            return {'CANCELLED'}
+        if not context.scene.render_frames:
+            complete_metadata_only(context, prepared)
+            self.report({'INFO'}, 'CArr dataset saved to {}.'.format(prepared.output_path))
+            return {'FINISHED'}
+        return self._start_queue(context, prepared)
+
+    def _start_queue(self, context, prepared):
+        self._prepared = prepared
+        self._render_index = 0
+        self._finalized = False
+        self._timer = None
+        self._progress_started = False
+
+        type(self)._is_running = True
+        try:
+            configure_rgba(context.scene)
+            context.window_manager.progress_begin(0, len(prepared.tasks))
+            self._progress_started = True
+            self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+            context.window_manager.modal_handler_add(self)
+        except Exception as exception:
+            self.report({'ERROR'}, 'CArr render setup failed: {}'.format(exception))
+            return self._finish(context, False)
+
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self._finish(context, False)
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        if self._render_index >= len(self._prepared.tasks):
+            return self._finish(context, True)
+
+        task = self._prepared.tasks[self._render_index]
+        try:
+            render_result = render_task(context, task, self._prepared.calibration)
+        except Exception as exception:
+            self.report(
+                {'ERROR'},
+                'CArr render failed for camera {} at Blender frame {}: {}'.format(
+                    task.camera.name, task.blender_frame, exception
+                ),
+            )
+            return self._finish(context, False)
+
+        if 'CANCELLED' in render_result:
+            self.report(
+                {'ERROR'},
+                'Blender cancelled CArr render for camera {} at Blender frame {}.'.format(
+                    task.camera.name, task.blender_frame
+                ),
+            )
+            return self._finish(context, False)
+
+        self._render_index += 1
+        context.window_manager.progress_update(self._render_index)
+
+        if context.screen is not None:
+            for area in context.screen.areas:
+                area.tag_redraw()
+
+        if self._render_index >= len(self._prepared.tasks):
+            return self._finish(context, True)
+
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context, success):
+        if self._finalized:
+            return {'FINISHED'} if success else {'CANCELLED'}
+
+        self._finalized = True
+        type(self)._is_running = False
+
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+
+        if self._progress_started:
+            context.window_manager.progress_end()
+            self._progress_started = False
+
+        restore_scene(context.scene, self._prepared.initial_state)
+
+        if success:
+            self.report({'INFO'}, 'CArr dataset saved to {}.'.format(self._prepared.output_path))
+            return {'FINISHED'}
+
+        self.report(
+            {'WARNING'},
+            'CArr export stopped. Partial files remain in {}.'.format(self._prepared.output_path),
+        )
+        return {'CANCELLED'}

@@ -208,6 +208,12 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     finally:
         carr_operator.os.path.lexists = original_lexists
 
+    scene.save_path = temporary
+    scene.carr_dataset_name = 'operator_metadata'
+    scene.render_frames = False
+    assert bpy.ops.object.camera_array() == {'FINISHED'}
+    assert (Path(temporary) / 'operator_metadata' / 'cam_test' / 'cameras_sphere.npz').is_file()
+
 with registered_addon(), tempfile.TemporaryDirectory() as temporary:
     from BlenderNeRF import carr_operator, carr_rig
     scene = bpy.context.scene
