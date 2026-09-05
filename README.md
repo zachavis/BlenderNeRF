@@ -69,7 +69,7 @@ Although release versions of **BlenderNeRF** are available for download, they ar
 
 ### Camera Array
 
-**Camera Array (CArr)** renders every animation frame from a fixed array of synchronized, inward-facing training cameras and from one automatically generated moving test camera. All training cameras share the same perspective intrinsics. Their positions use a circle, the local **+Z** hemisphere, or a full sphere around the rig center; the selected geometry also determines the test-camera trajectory.
+**Camera Array (CArr)** renders every animation frame from a fixed array of synchronized training cameras and from one automatically generated moving test camera. Every camera faces a shared, configurable world-space look-at point. All training cameras share the same perspective intrinsics. Their positions use a circle, the local **+Z** hemisphere, or a full sphere around the rig center; the selected geometry also determines the test-camera trajectory.
 
 
 ## How to use the Methods
@@ -147,11 +147,12 @@ COS renders one image per modal timer tick and returns control to Blender betwee
 * `Geometry` (**Circle** by default): fixed training-camera layout. **Circle** uses equally spaced cameras in the rig's local XY plane, **Hemisphere** samples the local +Z hemisphere, and **Sphere** samples the full sphere.
 * `Camera Count` (by default set to **10**): number of fixed, synchronized training cameras; at least two are required.
 * `Location` (by default set to the **0 m** vector): world-space center of the array rig.
+* `Look-at` (by default set to the **0 m** vector): world-space point faced by every generated camera. Setting it equal to `Location` preserves the original inward-facing behavior.
 * `Rotation` (by default set to the **0°** vector): orientation applied to the complete array and its test trajectory.
 * `Radius` (by default set to **4 m**): distance from the rig center to every generated camera.
 * `Lens` (by default set to **50 mm**): shared focal length used by all training cameras and the test camera.
 * `Train` and `Test` (activated by default): select the fixed-camera training split, the moving-camera test split, or both. At least one split must be enabled.
-* `Show Rig` (deactivated by default): create and display the managed array, including the fixed training cameras and generated test camera, in the scene.
+* `Show Rig` (deactivated by default): create and display the managed array, including the fixed training cameras, generated test camera, and a spherical empty marking the look-at point, in the scene.
 * `Name` (by default set to `dataset`): unarchived dataset directory created beneath `Save Path`.
 * `PLAY CArr`: validate the request and begin the modal CArr export.
 

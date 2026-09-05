@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -33,6 +34,7 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     scene.carr_dataset_name = 'synced array'
     scene.carr_geometry = 'CIRCLE'
     scene.carr_camera_count = 2
+    scene.carr_look_at = (0.0, 3.0, 0.0)
     scene.train_data = True
     scene.test_data = True
     scene.render_frames = False
@@ -130,8 +132,9 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
     assert not Path(str(root) + '.zip').exists()
     assert not any(root.glob('*/mask'))
     assert not any(root.glob('*/depth'))
-    log = (root / 'log.txt').read_text(encoding='utf-8')
-    assert '"Method": "CArr"' in log
+    log = json.loads((root / 'log.txt').read_text(encoding='utf-8'))
+    assert log['Method'] == 'CArr'
+    assert log.get('Look-at') == '[0.0, 3.0, 0.0]'
 
     scene.logs = False
     scene.carr_dataset_name = 'train only'
@@ -168,6 +171,17 @@ with registered_addon() as addon, tempfile.TemporaryDirectory() as temporary:
         assert 'non-empty' in str(exception)
     else:
         raise AssertionError('CArr accepted an existing non-empty directory')
+
+    scene.carr_dataset_name = 'look-at collision'
+    scene.carr_show_rig = False
+    scene.carr_look_at = (scene.carr_radius, 0.0, 0.0)
+    try:
+        carr_operator.validate_export(scene)
+    except carr_operator.CArrValidationError as exception:
+        assert 'look-at' in str(exception).lower()
+    else:
+        raise AssertionError('CArr accepted a look-at point at a generated camera position')
+    scene.carr_look_at = (0.0, 3.0, 0.0)
 
     blocked_ancestor = Path(temporary) / 'blocked'
     blocked_ancestor.write_text('not a directory', encoding='utf-8')

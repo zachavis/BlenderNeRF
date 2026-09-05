@@ -105,6 +105,10 @@ PROPS = [
     ('carr_location', bpy.props.FloatVectorProperty(
         name='Location', unit='LENGTH', update=carr_rig.carr_rig_property_update,
     )),
+    ('carr_look_at', bpy.props.FloatVectorProperty(
+        name='Look-at', description='World-space point faced by every generated CArr camera',
+        unit='LENGTH', update=carr_rig.carr_rig_property_update,
+    )),
     ('carr_rotation', bpy.props.FloatVectorProperty(
         name='Rotation', unit='ROTATION', subtype='EULER', update=carr_rig.carr_rig_property_update,
     )),

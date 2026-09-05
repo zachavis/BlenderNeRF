@@ -17,6 +17,8 @@ with registered_addon() as addon:
     assert hasattr(bpy.types, 'OBJECT_OT_camera_array')
     assert scene.carr_geometry == 'CIRCLE'
     assert scene.carr_camera_count == 10
+    assert hasattr(scene, 'carr_look_at')
+    assert tuple(scene.carr_look_at) == (0.0, 0.0, 0.0)
     assert scene.carr_radius == 4.0
     assert scene.carr_focal == 50.0
     assert addon.bl_info['version'] == (6, 2, 0)

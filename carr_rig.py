@@ -7,6 +7,7 @@ from . import carr_geometry
 
 CARR_COLLECTION_NAME = 'BlenderNeRF CArr'
 CARR_RIG_NAME = 'BlenderNeRF CArr Rig'
+CARR_LOOK_AT_NAME = 'BlenderNeRF CArr Look-at'
 CARR_CAMERA_DATA_NAME = 'BlenderNeRF CArr Camera'
 CARR_TRAIN_PREFIX = 'BlenderNeRF CArr Train '
 CARR_TEST_NAME = 'BlenderNeRF CArr Test'
@@ -21,10 +22,14 @@ def _rotation_rows(scene):
 def _pose_matrix(scene, local_position):
     rotation_rows = _rotation_rows(scene)
     center = tuple(scene.carr_location)
+    target = tuple(scene.carr_look_at)
     position = carr_geometry.transform_position(local_position, center, rotation_rows, scene.carr_radius)
+    target_offset = tuple(target[index] - position[index] for index in range(3))
+    if sum(component * component for component in target_offset) <= 1.0e-12:
+        raise ValueError('CArr look-at point cannot coincide with a generated camera position')
     preferred_up = carr_geometry.transform_direction((0.0, 0.0, 1.0), rotation_rows)
     fallback_up = carr_geometry.transform_direction((0.0, 1.0, 0.0), rotation_rows)
-    return Matrix(carr_geometry.look_at_matrix(position, center, preferred_up, fallback_up))
+    return Matrix(carr_geometry.look_at_matrix(position, target, preferred_up, fallback_up))
 
 
 def train_camera_matrices(scene):
@@ -73,6 +78,11 @@ def _managed_test_camera(scene):
 
 def ensure_preview(context):
     scene = context.scene
+    frame_count = scene.frame_end - scene.frame_start + 1
+    output_index = _preview_output_index(scene, frame_count)
+    train_matrices = train_camera_matrices(scene)
+    test_matrix = test_camera_matrix(scene, output_index, frame_count)
+
     collections = _managed_collections()
     if collections:
         collection = collections[0]
@@ -89,13 +99,20 @@ def ensure_preview(context):
     rig[MANAGED_KEY] = True
     collection.objects.link(rig)
 
+    look_at = bpy.data.objects.new(CARR_LOOK_AT_NAME, None)
+    look_at[MANAGED_KEY] = True
+    look_at.empty_display_type = 'SPHERE'
+    look_at.empty_display_size = 0.15
+    look_at.location = scene.carr_look_at
+    collection.objects.link(look_at)
+
     camera_data = bpy.data.cameras.new(CARR_CAMERA_DATA_NAME)
     camera_data.type = 'PERSP'
     camera_data.lens = scene.carr_focal
     camera_data[MANAGED_KEY] = True
 
     train_objects = []
-    for index, matrix in enumerate(train_camera_matrices(scene)):
+    for index, matrix in enumerate(train_matrices):
         camera = bpy.data.objects.new(CARR_TRAIN_PREFIX + '{:03d}'.format(index), camera_data)
         camera[MANAGED_KEY] = True
         collection.objects.link(camera)
@@ -105,9 +122,7 @@ def ensure_preview(context):
     test = bpy.data.objects.new(CARR_TEST_NAME, camera_data)
     test[MANAGED_KEY] = True
     collection.objects.link(test)
-    frame_count = scene.frame_end - scene.frame_start + 1
-    output_index = _preview_output_index(scene, frame_count)
-    test.matrix_world = test_camera_matrix(scene, output_index, frame_count)
+    test.matrix_world = test_matrix
     context.view_layer.update()
     return train_objects, test
 
@@ -125,11 +140,19 @@ def _export_is_running():
     return carr_operator.CameraArray._is_running
 
 
+def _refresh_preview(context):
+    try:
+        ensure_preview(context)
+    except ValueError as exception:
+        remove_preview(context.scene)
+        print('CArr preview unavailable: {}'.format(exception))
+
+
 def carr_show_rig_update(scene, context):
     if _export_is_running():
         return
     if scene.carr_show_rig:
-        ensure_preview(context)
+        _refresh_preview(context)
     else:
         remove_preview(scene)
 
@@ -138,7 +161,7 @@ def carr_rig_property_update(scene, context):
     if _export_is_running():
         return
     if scene.carr_show_rig:
-        ensure_preview(context)
+        _refresh_preview(context)
 
 
 @persistent
@@ -150,4 +173,7 @@ def carr_frame_change(scene):
         return
     frame_count = scene.frame_end - scene.frame_start + 1
     output_index = _preview_output_index(scene, frame_count)
-    test.matrix_world = test_camera_matrix(scene, output_index, frame_count)
+    try:
+        test.matrix_world = test_camera_matrix(scene, output_index, frame_count)
+    except ValueError:
+        return

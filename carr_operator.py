@@ -86,6 +86,12 @@ def validate_export(scene):
         raise CArrValidationError('CArr target path is not usable: {}'.format(output_path)) from exception
 
     frames = list(range(scene.frame_start, scene.frame_end + 1))
+    try:
+        carr_rig.train_camera_matrices(scene)
+        for output_index in range(len(frames)):
+            carr_rig.test_camera_matrix(scene, output_index, len(frames))
+    except ValueError as exception:
+        raise CArrValidationError(str(exception)) from exception
     return str(output_path), frames
 
 
@@ -168,6 +174,7 @@ def _write_log(scene, output_path, frame_count):
         'Geometry': scene.carr_geometry,
         'Camera Count': scene.carr_camera_count,
         'Location': str(list(scene.carr_location)),
+        'Look-at': str(list(scene.carr_look_at)),
         'Rotation': str(list(scene.carr_rotation)),
         'Radius': scene.carr_radius,
         'Lens': str(scene.carr_focal) + ' mm',

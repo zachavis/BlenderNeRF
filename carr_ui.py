@@ -16,6 +16,7 @@ class CARR_UI(bpy.types.Panel):
         layout.prop(scene, 'carr_geometry')
         layout.prop(scene, 'carr_camera_count')
         layout.prop(scene, 'carr_location')
+        layout.prop(scene, 'carr_look_at')
         layout.prop(scene, 'carr_rotation')
         layout.prop(scene, 'carr_radius')
         layout.prop(scene, 'carr_focal')

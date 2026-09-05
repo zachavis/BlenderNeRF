@@ -17,14 +17,17 @@ with registered_addon() as addon:
     scene.frame_end = 5
     scene.carr_geometry = 'CIRCLE'
     scene.carr_camera_count = 3
-    scene.carr_location = (0.0, 0.0, 0.0)
-    scene.carr_rotation = (0.0, 0.0, 0.0)
+    scene.carr_location = (1.0, 2.0, 3.0)
+    scene.carr_look_at = (1.0, 2.0, 3.0)
+    scene.carr_rotation = (0.0, 0.0, math.pi / 2.0)
     scene.carr_radius = 4.0
     scene.carr_focal = 50.0
     scene.frame_set(-20)
     scene.carr_show_rig = True
 
     collection = bpy.data.collections[addon.carr_rig.CARR_COLLECTION_NAME]
+    assert 'BlenderNeRF CArr Look-at' in collection.objects
+    look_at = collection.objects['BlenderNeRF CArr Look-at']
     train = sorted(
         [obj for obj in collection.objects if obj.name.startswith(addon.carr_rig.CARR_TRAIN_PREFIX)],
         key=lambda obj: obj.name,
@@ -33,8 +36,38 @@ with registered_addon() as addon:
     assert len(train) == 3
     assert all(obj.type == 'CAMERA' for obj in train + [test])
     assert all(obj.data is train[0].data for obj in train + [test])
+    assert look_at.type == 'EMPTY'
+    assert look_at.empty_display_type == 'SPHERE'
+    assert tuple(look_at.location) == (1.0, 2.0, 3.0)
     assert train[0].data.lens == 50.0
-    assert all(math.isclose(obj.location.length, 4.0, rel_tol=1.0e-6) for obj in train)
+    assert all(
+        math.isclose(
+            sum((obj.location[index] - scene.carr_location[index]) ** 2 for index in range(3)),
+            16.0,
+            rel_tol=1.0e-6,
+        )
+        for obj in train
+    )
+    first_forward = tuple(-matrix_rows(train[0].matrix_world)[row][2] for row in range(3))
+    assert all(
+        math.isclose(actual, expected, abs_tol=1.0e-6)
+        for actual, expected in zip(first_forward, (0.0, -1.0, 0.0))
+    )
+
+    scene.carr_look_at = (1.0, 2.0, 6.0)
+    collection = bpy.data.collections[addon.carr_rig.CARR_COLLECTION_NAME]
+    look_at = collection.objects['BlenderNeRF CArr Look-at']
+    train = sorted(
+        [obj for obj in collection.objects if obj.name.startswith(addon.carr_rig.CARR_TRAIN_PREFIX)],
+        key=lambda obj: obj.name,
+    )
+    test = collection.objects[addon.carr_rig.CARR_TEST_NAME]
+    assert tuple(look_at.location) == (1.0, 2.0, 6.0)
+    first_forward = tuple(-matrix_rows(train[0].matrix_world)[row][2] for row in range(3))
+    assert all(
+        math.isclose(actual, expected, abs_tol=1.0e-6)
+        for actual, expected in zip(first_forward, (0.0, -0.8, 0.6))
+    )
     expected_clamped = matrix_rows(addon.carr_rig.test_camera_matrix(scene, 0, 5))
     assert all(
         math.isclose(actual, expected, abs_tol=1.0e-6)
@@ -58,6 +91,30 @@ with registered_addon() as addon:
     scene.carr_camera_count = 4
     train = [obj for obj in collection.objects if obj.name.startswith(addon.carr_rig.CARR_TRAIN_PREFIX)]
     assert len(train) == 4
+    scene.carr_look_at = (1.0, 2.0, 0.0)
+    collection = bpy.data.collections[addon.carr_rig.CARR_COLLECTION_NAME]
+    look_at = collection.objects['BlenderNeRF CArr Look-at']
+    train = sorted(
+        [obj for obj in collection.objects if obj.name.startswith(addon.carr_rig.CARR_TRAIN_PREFIX)],
+        key=lambda obj: obj.name,
+    )
+    assert tuple(look_at.location) == (1.0, 2.0, 0.0)
+    first_forward = tuple(-matrix_rows(train[0].matrix_world)[row][2] for row in range(3))
+    assert all(
+        math.isclose(actual, expected, abs_tol=1.0e-6)
+        for actual, expected in zip(first_forward, (0.0, -0.8, -0.6))
+    )
+
+    collision_target = tuple(train[0].location)
+    scene.carr_look_at = collision_target
+    assert not [collection for collection in bpy.data.collections if collection.get(addon.carr_rig.MANAGED_KEY)]
+    assert not [obj for obj in bpy.data.objects if obj.get(addon.carr_rig.MANAGED_KEY)]
+    assert not [camera for camera in bpy.data.cameras if camera.get(addon.carr_rig.MANAGED_KEY)]
+    scene.frame_set(4)
+
+    scene.carr_look_at = (1.0, 2.0, 0.0)
+    collection = bpy.data.collections[addon.carr_rig.CARR_COLLECTION_NAME]
+    assert 'BlenderNeRF CArr Look-at' in collection.objects
     scene.carr_show_rig = False
     assert addon.carr_rig.CARR_COLLECTION_NAME not in bpy.data.collections
 
